@@ -1,0 +1,290 @@
+---
+title: "Big Data for Public Policy Class Project"
+author: "Anastasiia Andreeva"
+date: "3/28/2022"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    theme: simplex
+    highlight: kate
+    df_print: paged
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+setwd("/Users/pirozhok/Desktop/OneDrive - Central European University/WINTER2022/BIG DATA 4 PP/project")
+library(tm)
+library(tidytext)
+library(tm)
+library('quanteda')
+library('quanteda.textmodels')
+library('quanteda.textplots')
+library(dplyr)
+library(SnowballC)
+library(streamR)
+library(readr)
+GND_alltweets <- read_csv("~/Desktop/OneDrive - Central European University/WINTER2022/BIG DATA 4 PP/project/GND_alltweets.csv")
+IB_alltweets <- read_csv("~/Desktop/OneDrive - Central European University/WINTER2022/BIG DATA 4 PP/project/IB_alltweets.csv")
+CC_alltweets <- read_csv("~/Desktop/OneDrive - Central European University/WINTER2022/BIG DATA 4 PP/project/CC_alltweets.csv")
+```
+
+# Comparing Public Attitudes towards Green New Deal and Infrastructure Bill
+
+## Objectives
+### **RQ: How do public attitudes differ in regards to Green New Deal and Infrastructure Bill?**  
+####  GND - widely publicly discussed, a lot of media attention, specifically aimed at climate policies.  
+####  Infrastructure Bill - actually was signed by Congress (Nov 2021). Broader agenda.
+
+## Summary of the data
+```{r echo=FALSE}
+IB_alltweets$type <- "Infrastructure Bill"
+GND_alltweets$type <- "Green New Deal"
+CC_alltweets$type <- "Climate Change"
+all.tweets <- rbind(GND_alltweets, IB_alltweets, CC_alltweets)
+freq <- table(all.tweets$type)
+freq
+```
+
+
+## Sentiment analysis
+
+```{r echo=FALSE}
+lexicon <- read.csv("lexicon.csv", stringsAsFactors=F)
+pos.words <- lexicon$word[lexicon$polarity=="positive"]
+neg.words <- lexicon$word[lexicon$polarity=="negative"]
+# function to clean the text
+clean_tweets <- function(text){
+  lapply(c("tm", "SnowballC", "stringr"), require, c=T, q=T)
+  utf8text <- iconv(text, to='UTF-8', sub = "byte")
+  words <- removePunctuation(utf8text)
+  words <- tolower(words)
+  words <- str_split(words, " ")
+  return(words)
+}
+# clean the text
+text.gnd <- clean_tweets(GND_alltweets$text)
+text.ib <- clean_tweets(IB_alltweets$text)
+text.cc <- clean_tweets(CC_alltweets$text)
+# a function to classify individual tweets
+classify <- function(words, pos.words, neg.words){
+  pos.matches <- sum(words %in% pos.words)
+  neg.matches <- sum(words %in% neg.words)
+  return(pos.matches - neg.matches)
+}
+classifier <- function(text, pos.words, neg.words){
+  scores <- unlist(lapply(text, classify, pos.words, neg.words))
+  n <- length(scores)
+  positive <- as.integer(length(which(scores>0))/n*100)
+  negative <- as.integer(length(which(scores<0))/n*100)
+  neutral <- 100 - positive - negative
+  cat(n, "tweets:", positive, "% positive,",
+      negative, "% negative,", neutral, "% neutral")
+}
+```
+### Applying classifier function:
+``` {r echo=TRUE}
+classifier(text.gnd, pos.words, neg.words)
+```
+``` {r echo=TRUE}
+classifier(text.ib, pos.words, neg.words)
+```
+
+``` {r echo=TRUE}
+classifier(text.cc, pos.words, neg.words)
+```
+### Keywords in context
+``` {r echo=TRUE}
+corp.all <- corpus(all.tweets, text_field = "text")
+options(width = 200)
+corp.all<-tokens(corp.all)
+kwic(corp.all, "energy")
+kwic(corp.all, "tax")
+kwic(corp.all, "future")
+```
+
+-> that's too much observations + I have quite a lot of repeated tweets...
+
+
+## Wordclouds  
+Let's look at top features of each three groups of tweets that we're working with
+```{r echo=FALSE, warning = FALSE}
+corp.gnd <- corpus(GND_alltweets, text_field = "text")
+corp.ib <- corpus(IB_alltweets, text_field = "text")
+corp.cc <- corpus(CC_alltweets, text_field = "text")
+gnd.dfm <- dfm(corp.gnd, remove_punct = TRUE, tolower = TRUE, remove = stopwords('en'))
+ib.dfm <- dfm(corp.ib, remove_punct = TRUE, tolower = TRUE, remove = stopwords('en'))
+cc.dfm <- dfm(corp.cc, remove_punct = TRUE, tolower = TRUE, remove = stopwords('en'))
+```
+
+```{r echo=TRUE}
+topfeatures(gnd.dfm, 20)
+```
+```{r echo=TRUE}
+topfeatures(ib.dfm, 20)
+```
+
+```{r echo=TRUE}
+topfeatures(cc.dfm, 20)
+```
+
+### Wordcloud
+``` {r}
+set.seed(100)
+textplot_wordcloud(gnd.dfm, min_count = 60, random_order = FALSE,
+                   rotation = .25,
+                   dfm_trim(gnd.dfm, min_termfreq = 400),
+                   color = RColorBrewer::brewer.pal(8,"Dark2"))
+
+textplot_wordcloud(ib.dfm, min_count = 60, random_order = FALSE,
+                   rotation = .25,
+                   dfm_trim(ib.dfm, min_termfreq = 400),
+                   color = RColorBrewer::brewer.pal(8,"Set1"))
+
+textplot_wordcloud(cc.dfm, min_count = 60, random_order = FALSE,
+                   rotation = .25,
+                   dfm_trim(ib.dfm, min_termfreq = 400),
+                   color = RColorBrewer::brewer.pal(8,"Set2"))
+```
+
+And now let's proceed to ugly plots :)  
+
+## Frequency by date 
+Looking at cumulative corpus - it lacks cleaning...
+``` {r}
+all.tweets$date <- format(as.POSIXct(all.tweets$created, format = '%m/%d/%Y %H:%M:%S'),
+                           format='%m/%d/%Y')
+corp.all <- corpus(all.tweets, text_field = "text")
+all_td <- tidy(corp.all)
+all_td
+all_words <- all_td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+```
+
+Looking at how the appearance of a word changes over time
+``` {r error = FALSE, warning = FALSE}
+all_freq <- all_words %>%
+  count(date, word) %>%
+  tidyr::complete(date, word, fill = list(n = 0)) %>%
+  group_by(date) %>%
+  mutate(date = sum(n),
+         percent = n / date) %>%
+  ungroup()
+```
+
+``` {r error = FALSE, warning = FALSE}
+all_freq
+library(broom)
+models <- all_freq %>%
+  group_by(word) %>%
+  filter(sum(n) > 50) %>%
+  do(tidy(glm(cbind(n, date - n) ~ date, .,
+              family = "binomial"))) %>%
+  ungroup() %>%
+  filter(term == "date")
+models
+library(ggplot2)
+models %>%
+  mutate(adjusted.p.value = p.adjust(p.value)) %>%
+  ggplot(aes(estimate, adjusted.p.value)) +
+  geom_point() +
+  scale_y_log10() +
+  geom_text(aes(label = word), vjust = 1, hjust = 1,
+            check_overlap = TRUE) +
+  xlab("Estimated change over time") +
+  ylab("Adjusted p-value")
+```
+
+???? why ???? porque ???? pochemu ???? warum ?????
+
+Breaking it down to most 6 frequent topics doesn't really help  
+
+``` {r echo=FALSE}
+library(scales)
+
+models %>%
+  top_n(6, abs(estimate)) %>%
+  inner_join(all_freq) %>%
+  ggplot(aes(date, percent)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~ word) +
+  scale_y_continuous(labels = percent_format()) +
+  ylab("Frequency of word in tweets")
+```
+
+## Topic Modeling
+```{r echo=FALSE}
+library(topicmodels)
+library(tidytext)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+## creating corpus
+corpus.cc = VCorpus(VectorSource(CC_alltweets$text))
+#lowercase
+corpus.cc = tm_map(corpus.cc, content_transformer(tolower))
+corpus.cc = tm_map(corpus.cc, removePunctuation)
+corpus.cc = tm_map(corpus.cc, removeWords, "rt")
+corpus.cc = tm_map(corpus.cc, removeWords, "RT")
+#remove exotic encoding charactersation
+corpus.cc <- tm_map(corpus.cc, function(x) iconv(x, "latin1", "ASCII", sub=""))
+#make sure the data type is correct
+corpus.cc <- tm_map(corpus.cc, PlainTextDocument)
+# Look at first email after processing
+## DTM and sparsity 
+dtm.cc = DocumentTermMatrix(corpus.cc)
+dtm.cc
+dtm.cc = removeSparseTerms(dtm.cc, 0.97)
+dtm.cc
+raw.sum=apply(dtm.cc,1,FUN=sum)
+dtm.cc=dtm.cc[raw.sum!=0,]
+cc_lda <- LDA(dtm.cc, k = 3, control = list(seed = 1234))
+cc_lda
+cc_topics <- tidy(cc_lda, matrix = "beta")
+cc_topics
+```
+
+My theretical assumption - 3 topics. In practice, looks like this number also sort of works. Let's visualize each topic  
+```{r echo = TRUE}
+#first retrieve the top 10 terms by topic
+cc_top_terms <- cc_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+#then plot them
+cc_top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+```
+
+Visualization of the most discriminative ones:
+```{r echo = TRUE}
+beta_spread <- cc_topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  #also filter for words that are relatively common
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+
+beta_spread
+
+beta_spread %>%
+  mutate(absratio = abs(log_ratio)) %>%
+  group_by(direction = log_ratio > 0) %>%
+  top_n(10, absratio) %>%
+  ungroup() %>%
+  mutate(term = reorder(term, log_ratio)) %>%
+  ggplot(aes(term, log_ratio)) +
+  geom_col() +
+  labs(y = "Log2 ratio of beta in topic 2 / topic 1") +
+  coord_flip()
+```
+
