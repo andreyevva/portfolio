@@ -1,3 +1,0 @@
-## This folder contains the code for my MA thesis
-## It consists of 1 pilot and 2 survey waves
-## All of the three surveys were survey experiments. The second wave included an open-ended question, so the analysis includes manipulation of large textual data
