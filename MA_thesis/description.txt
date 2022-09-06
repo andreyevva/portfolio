@@ -1,0 +1,3 @@
+The folder contains the code for the project behind my MA thesis
+It consisted of a pilot and 2 waves of surveys, fielded online on a sample of American population.
+The second wave of the survey included open-ended question, so the data analysis includes quantitative analysis of textual data.
