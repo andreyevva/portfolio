@@ -17,7 +17,7 @@ library(stringr)
 library(rsconnect) # <-- package to publish visualisations online
 
 #Import data
-df_full=read.csv('Rshiny.csv',sep=";", colClasses=c("factor","numeric","integer","factor","factor","factor","factor"), na.strings=c("missing",""))
+df_full=read.csv('Rshiny_bidding.csv',sep=";", colClasses=c("factor","numeric","integer","factor","factor","factor","factor"), na.strings=c("missing",""))
 df_full=df_full %>% filter(singleb != "")
 df_full=df_full %>% filter(market_id_name != "")
 
